@@ -1,5 +1,5 @@
 # Minimum Requirements
-* Python 3.8
+* Python 3.9
 * Node 10.18.1
 
 # Initial setup
