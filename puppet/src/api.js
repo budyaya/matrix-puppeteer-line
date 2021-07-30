@@ -16,6 +16,7 @@
 import net from "net"
 import fs from "fs"
 import path from "path"
+import logger from "loglevel";
 
 import Client from "./client.js"
 import { promisify } from "./util.js"
@@ -29,7 +30,7 @@ export default class PuppetAPI {
 		this.clients = new Map()
 		this.connIDSequence = 0
 		this.stopped = false
-		this.log = require("loglevel").getLogger("API")
+		this.log = logger.getLogger("API")
 	}
 
 	acceptConnection = sock => {

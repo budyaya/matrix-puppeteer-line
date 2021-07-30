@@ -35,7 +35,7 @@ export default class Client {
 		this.maxCommandID = 0
 		this.set_userID(userID)
 		if (!this.userID) {
-			this.log = require("loglevel").getLogger(`API/${this.connID}`)
+			this.log = logger.getLogger(`API/${this.connID}`)
 			this.log.setLevel(logger.getLogger("API").getLevel())
 		}
 	}
