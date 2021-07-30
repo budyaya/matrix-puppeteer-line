@@ -16,6 +16,7 @@
 import net from "net"
 import fs from "fs"
 import path from "path"
+import logger from "loglevel"
 
 import Client from "./client.js"
 import { promisify } from "./util.js"
@@ -57,12 +58,12 @@ export default class PuppetAPI {
 		} catch (err) {}
 		await promisify(cb => this.server.listen(socketPath, cb))
 		await fs.promises.chmod(socketPath, 0o700)
-		this.log("Now listening at", socketPath)
+		logger.info("Now listening at", socketPath)
 	}
 
 	async startTCP(port, host) {
 		await promisify(cb => this.server.listen(port, host, cb))
-		this.log(`Now listening at ${host || ""}:${port}`)
+		logger.info(`Now listening at ${host || ""}:${port}`)
 	}
 
 	async start() {

@@ -16,6 +16,8 @@
 import process from "process"
 import fs from "fs"
 import sd from "systemd-daemon"
+import logger from "loglevel"
+import loggerprefix from "loglevel"
 
 import arg from "arg"
 
@@ -42,6 +44,13 @@ MessagesPuppeteer.extensionDir = config.extension_dir || MessagesPuppeteer.exten
 MessagesPuppeteer.cycleDelay = config.cycle_delay || MessagesPuppeteer.cycleDelay
 MessagesPuppeteer.useXdotool = config.use_xdotool || MessagesPuppeteer.useXdotool
 MessagesPuppeteer.jiggleDelay = config.jiggle_delay || MessagesPuppeteer.jiggleDelay
+logger.setLevel(config.logger.default_level || 3)
+logger.getLogger("Puppeteer").setLevel(config.logger.puppeteer.level || logger.getLevel())
+logger.getLogger("Puppeteer_details").setLevel(config.logger.puppeteer.details || 3)
+logger.getLogger("Puppeteer_spammer").setLevel(config.logger.puppeteer.spammer || 3)
+// Register and specify the logger format. Others will inherit
+loggerprefix.reg(logger)
+loggerprefix.apply(logger, { template: '[%n] %l:' });
 
 const api = new PuppetAPI(config.listen)
 

@@ -15,13 +15,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import process from "process"
 import path from "path"
-import { exec, execSync } from "child_process"
+import {exec, execSync} from "child_process"
 
 import puppeteer from "puppeteer"
 import chrono from "chrono-node"
+import logger from "loglevel"
 
 import TaskQueue from "./taskqueue.js"
-import { sleep } from "./util.js"
+import {sleep} from "./util.js"
 
 export default class MessagesPuppeteer {
 	static profileDir = "./profiles"
@@ -31,7 +32,7 @@ export default class MessagesPuppeteer {
 	static jiggleDelay = 30000
 	static devtools = false
 	static noSandbox = false
-	static viewport = { width: 960, height: 840 }
+	static viewport = {width: 960, height: 840}
 	static url = undefined
 	static extensionDir = "extension_files"
 
@@ -59,14 +60,17 @@ export default class MessagesPuppeteer {
 		this.jiggleTimerID = null
 		this.taskQueue = new TaskQueue(this.id)
 		this.client = client
-	}
-
-	log(...text) {
-		console.log(`[Puppeteer/${this.id}]`, ...text)
-	}
-
-	error(...text) {
-		console.error(`[Puppeteer/${this.id}]`, ...text)
+		// Distinct logger object with same format as previous method
+		// General logger for overall process
+		this.log = logger.getLogger(`Puppeteer/${this.id}`)
+		// Detailed logger for active run (event based)
+		this.dlog = logger.getLogger(`Puppeteer/${this.id}: Details`)
+		// Seperate logger for more spammy messages (timer based)
+		this.spammer = logger.getLogger(`Puppeteer/${this.id}: Spam`)
+		// Inherit config rules
+		this.log.setLevel(logger.getLogger("Puppeteer").getLevel())
+		this.dlog.setLevel(logger.getLogger("Puppeteer_details").getLevel())
+		this.spammer.setLevel(logger.getLogger("Puppeteer_spammer").getLevel())
 	}
 
 	/**
@@ -74,12 +78,12 @@ export default class MessagesPuppeteer {
 	 * This must be called before doing anything else.
 	 */
 	async start() {
-		this.log("Launching browser")
+		this.log.info("Launching browser")
 
-		const args = [
+		let args = [
 			`--disable-extensions-except=${MessagesPuppeteer.extensionDir}`,
 			`--load-extension=${MessagesPuppeteer.extensionDir}`,
-			`--window-size=${MessagesPuppeteer.viewport.width},${MessagesPuppeteer.viewport.height+120}`,
+			`--window-size=${MessagesPuppeteer.viewport.width},${MessagesPuppeteer.viewport.height + 120}`,
 		]
 		if (MessagesPuppeteer.noSandbox) {
 			args = args.concat(`--no-sandbox`)
@@ -94,7 +98,7 @@ export default class MessagesPuppeteer {
 			devtools: MessagesPuppeteer.devtools,
 			timeout: 0,
 		})
-		this.log("Opening new tab")
+		this.log.info("Opening new tab")
 		const pages = await this.browser.pages()
 		if (pages.length > 0) {
 			this.page = pages[0]
@@ -103,29 +107,29 @@ export default class MessagesPuppeteer {
 		}
 
 		{
-			this.log("Finding extension UUID")
+			this.log.info("Finding extension UUID")
 			await this.page.goto("chrome://system")
 			const selector = "#extensions-value"
 			await this.page.waitForSelector(selector, 0)
 			const lineDetails = await this.page.$eval(selector, e => e.innerText)
 			const uuid = lineDetails.match(/(.*) : LINE : version/)[1]
-			this.log(`Found extension UUID ${uuid}`)
+			this.log.info(`Found extension UUID ${uuid}`)
 			MessagesPuppeteer.url = `chrome-extension://${uuid}/index.html`
 		}
 
 		this.blankPage = await this.browser.newPage()
 		if (MessagesPuppeteer.useXdotool) {
-			this.log("Finding window ID")
+			this.log.info("Finding window ID")
 			const buffer = execSync("xdotool search 'about:blank'")
 			this.windowID = Number.parseInt(buffer)
-			this.log(`Found window ID ${this.windowID}`)
+			this.log.info(`Found window ID ${this.windowID}`)
 		}
 
-		this.log(`Opening ${MessagesPuppeteer.url}`)
+		this.log.info(`Opening ${MessagesPuppeteer.url}`)
 		await this.page.setBypassCSP(true) // Needed to load content scripts
 		await this._preparePage(true)
 
-		this.log("Exposing functions")
+		this.log.info("Exposing functions")
 		await this.page.exposeFunction("__mautrixReceiveQR", this._receiveQRChange.bind(this))
 		await this.page.exposeFunction("__mautrixSendEmailCredentials", this._sendEmailCredentials.bind(this))
 		await this.page.exposeFunction("__mautrixReceivePIN", this._receivePIN.bind(this))
@@ -145,7 +149,7 @@ export default class MessagesPuppeteer {
 		this.loginRunning = false
 		this.loginCancelled = false
 		this.taskQueue.start()
-		this.log("Startup complete")
+		this.log.info("Startup complete")
 	}
 
 	async _preparePage(navigateTo) {
@@ -155,8 +159,8 @@ export default class MessagesPuppeteer {
 		} else {
 			await this.page.reload()
 		}
-		this.log("Injecting content script")
-		await this.page.addScriptTag({ path: "./src/contentscript.js", type: "module" })
+		this.log.info("Injecting content script")
+		await this.page.addScriptTag({path: "./src/contentscript.js", type: "module"})
 	}
 
 	async _interactWithPage(promiser) {
@@ -164,7 +168,7 @@ export default class MessagesPuppeteer {
 		try {
 			await promiser()
 		} catch (e) {
-			this.error(`Error while interacting with page: ${e}`)
+			this.log.error(`Error while interacting with page: ${e}`)
 			throw e
 		} finally {
 			await this.blankPage.bringToFront()
@@ -180,7 +184,7 @@ export default class MessagesPuppeteer {
 				if (numTries && --numTries == 0) {
 					throw e
 				} else if (failMessage) {
-					this.log(failMessage)
+					this.log.error(failMessage)
 				}
 			}
 		}
@@ -211,51 +215,51 @@ export default class MessagesPuppeteer {
 		const loginContentArea = await this.page.waitForSelector("#login_content")
 
 		switch (login_type) {
-		case "qr": {
-			this.log("Running QR login")
-			const qrButton = await this.page.waitForSelector("#login_qr_btn")
-			await qrButton.click()
+			case "qr": {
+				this.dlog.info("Running QR login")
+				const qrButton = await this.page.waitForSelector("#login_qr_btn")
+				await qrButton.click()
 
-			const qrElement = await this.page.waitForSelector("#login_qrcode_area div[title]", {visible: true})
-			const currentQR = await this.page.evaluate(element => element.title, qrElement)
-			this._receiveQRChange(currentQR)
+				const qrElement = await this.page.waitForSelector("#login_qrcode_area div[title]", {visible: true})
+				const currentQR = await this.page.evaluate(element => element.title, qrElement)
+				this._receiveQRChange(currentQR)
 
-			await this.page.evaluate(
-				element => window.__mautrixController.addQRChangeObserver(element), qrElement)
-			await this.page.evaluate(
-				element => window.__mautrixController.addQRAppearObserver(element), loginContentArea)
+				await this.page.evaluate(
+					element => window.__mautrixController.addQRChangeObserver(element), qrElement)
+				await this.page.evaluate(
+					element => window.__mautrixController.addQRAppearObserver(element), loginContentArea)
 
-			break
-		}
-		case "email": {
-			this.log("Running email login")
-			if (!login_data) {
-				this._sendLoginFailure("No login credentials provided for email login")
-				return
+				break
 			}
+			case "email": {
+				this.dlog.info("Running email login")
+				if (!login_data) {
+					this._sendLoginFailure("No login credentials provided for email login")
+					return
+				}
 
-			const emailButton = await this.page.waitForSelector("#login_email_btn")
-			await emailButton.click()
+				const emailButton = await this.page.waitForSelector("#login_email_btn")
+				await emailButton.click()
 
-			await this.page.waitForSelector("#login_email_area", {visible: true})
-			this.login_email = login_data["email"]
-			this.login_password = login_data["password"]
-			await this._sendEmailCredentials()
+				await this.page.waitForSelector("#login_email_area", {visible: true})
+				this.login_email = login_data["email"]
+				this.login_password = login_data["password"]
+				await this._sendEmailCredentials()
 
-			await this.page.evaluate(
-				element => window.__mautrixController.addEmailAppearObserver(element), loginContentArea)
+				await this.page.evaluate(
+					element => window.__mautrixController.addEmailAppearObserver(element), loginContentArea)
 
-			break
-		}
-		default:
-			this._sendLoginFailure(`Invalid login type: ${login_type}`)
-			return
+				break
+			}
+			default:
+				this._sendLoginFailure(`Invalid login type: ${login_type}`)
+				return
 		}
 
 		await this.page.evaluate(
 			element => window.__mautrixController.addPINAppearObserver(element), loginContentArea)
 
-		this.log("Waiting for login response")
+		this.dlog.info("Waiting for login response")
 		let doneWaiting = false
 		let loginSuccess = false
 		const cancelableResolve = (promiseFn) => {
@@ -289,7 +293,7 @@ export default class MessagesPuppeteer {
 		].map(promiseFn => cancelableResolve(promiseFn)))
 
 		if (!this.loginCancelled) {
-			this.log("Removing observers")
+			this.dlog.info("Removing observers")
 			// TODO __mautrixController is undefined when cancelling, why?
 			await this.page.evaluate(ownID => window.__mautrixController.setOwnID(ownID), this.ownID)
 			await this.page.evaluate(() => window.__mautrixController.removeQRChangeObserver())
@@ -309,28 +313,28 @@ export default class MessagesPuppeteer {
 		}
 
 		this._sendLoginSuccess()
-		this.log("Waiting for sync")
+		this.dlog.info("Waiting for sync")
 		try {
 			await this.page.waitForFunction(
 				messageSyncElement => {
 					const text = messageSyncElement.innerText
 					return text.startsWith("Syncing messages...")
 						&& (text.endsWith("100%") || text.endsWith("NaN%"))
-						// TODO Sometimes it gets stuck at 99%...??
+					// TODO Sometimes it gets stuck at 99%...??
 				},
 				{timeout: 10000}, // Assume 10 seconds is long enough
 				messageSyncElement)
 		} catch (err) {
 			//this._sendLoginFailure(`Failed to sync: ${err}`)
-			this.log("LINE's sync took too long, assume it's fine and carry on...")
+			this.dlog.warn("LINE's sync took too long, assume it's fine and carry on...")
 		} finally {
 			const syncText = await messageSyncElement.evaluate(e => e.innerText)
-			this.log(`Final sync text is: "${syncText}"`)
+			this.dlog.info(`Final sync text is: "${syncText}"`)
 		}
 
 		this.loginRunning = false
 		await this.blankPage.bringToFront()
-		this.log("Login complete")
+		this.dlog.info("Login complete")
 	}
 
 	/**
@@ -366,7 +370,7 @@ export default class MessagesPuppeteer {
 		if (this.browser) {
 			await this.browser.close()
 		}
-		this.log("Everything stopped")
+		this.log.info("Everything stopped")
 	}
 
 	/**
@@ -494,7 +498,7 @@ export default class MessagesPuppeteer {
 	 * @return {Promise<{id: number}>} - The ID of the sent message.
 	 */
 	async sendMessage(chatID, text) {
-		return { id: await this.taskQueue.push(() => this._sendMessageUnsafe(chatID, text)) }
+		return {id: await this.taskQueue.push(() => this._sendMessageUnsafe(chatID, text))}
 	}
 
 	/**
@@ -512,14 +516,14 @@ export default class MessagesPuppeteer {
 		for (const [chatID, messageID] of Object.entries(msgIDs)) {
 			this.mostRecentMessages.set(chatID, messageID)
 		}
-		this.log("Updated most recent message ID map:")
-		this.log(JSON.stringify(msgIDs))
+		this.dlog.info("Updated most recent message ID map:")
+		this.dlog.debug(JSON.stringify(msgIDs))
 
 		for (const [chatID, messageID] of Object.entries(ownMsgIDs)) {
 			this.mostRecentOwnMessages.set(chatID, messageID)
 		}
-		this.log("Updated most recent own message ID map:")
-		this.log(JSON.stringify(ownMsgIDs))
+		this.dlog.info("Updated most recent own message ID map:")
+		this.dlog.debug(JSON.stringify(ownMsgIDs))
 
 		this.mostRecentReceipts.clear()
 		for (const [chatID, receipts] of Object.entries(rctIDs)) {
@@ -528,11 +532,11 @@ export default class MessagesPuppeteer {
 				receiptMap.set(+count, receiptID)
 			}
 		}
-		this.log("Updated most recent receipt ID map")
+		this.dlog.info("Updated most recent receipt ID map")
 		for (const [chatID, receiptMap] of this.mostRecentReceipts) {
-			this.log(`${chatID}:`)
+			this.dlog.debug(`${chatID}:`)
 			for (const [count, receiptID] of receiptMap) {
-				this.log(`Read by ${count}: ${receiptID}`)
+				this.dlog.debug(`Read by ${count}: ${receiptID}`)
 			}
 		}
 	}
@@ -552,7 +556,7 @@ export default class MessagesPuppeteer {
 	}
 
 	async sendFile(chatID, filePath) {
-		return { id: await this.taskQueue.push(() => this._sendFileUnsafe(chatID, filePath)) }
+		return {id: await this.taskQueue.push(() => this._sendFileUnsafe(chatID, filePath))}
 	}
 
 	_cycleTimerStart() {
@@ -562,7 +566,7 @@ export default class MessagesPuppeteer {
 	}
 
 	async _cycleChatUnsafe() {
-		this.log("Cycling chats")
+		this.dlog.info("Cycling chats")
 		const initialID = this.cycleTimerID
 
 		const currentChatID = await this.page.evaluate(() => window.__mautrixController.getCurrentChatID())
@@ -575,7 +579,7 @@ export default class MessagesPuppeteer {
 		// - the most recently-sent own message is not fully read
 		let chatIDToSync
 		for (let i = 0, n = chatList.length; i < n; i++) {
-			const chatListItem = chatList[(i+offset) % n]
+			const chatListItem = chatList[(i + offset) % n]
 
 			if (chatListItem.notificationCount > 0) {
 				// Chat has unread notifications, so don't view it
@@ -601,13 +605,13 @@ export default class MessagesPuppeteer {
 			}
 
 			chatIDToSync = chatListItem.id
-			this.log(`Viewing chat ${chatIDToSync} to check for new read receipts`)
+			this.dlog.debug(`Viewing chat ${chatIDToSync} to check for new read receipts`)
 			await this._syncChat(chatIDToSync)
 			break
 		}
 
 		if (!chatIDToSync) {
-			this.log("Found no chats in need of read receipt updates")
+			this.dlog.debug("Found no chats in need of read receipt updates")
 		}
 
 		if (this.cycleTimerID == initialID) {
@@ -624,27 +628,27 @@ export default class MessagesPuppeteer {
 	}
 
 	_jiggleMouse() {
-		this.log("Jiggling mouse")
+		this.spammer.info("Jiggling mouse")
 		const initialID = this.jiggleTimerID
 
 		exec(`xdotool mousemove --sync --window ${this.windowID} 0 0`, {},
-		(error, stdout, stderr) => {
-			if (error) {
-				this.log(`Error while jiggling mouse: ${error}`)
-			} else {
-				this.log("Jiggled mouse")
-			}
+			(error, stdout, stderr) => {
+				if (error) {
+					this.spammer.error(`Error while jiggling mouse: ${error}`)
+				} else {
+					this.spammer.debug("Jiggled mouse")
+				}
 
-			if (this.jiggleTimerID == initialID) {
-				this._jiggleTimerStart()
-			}
-		})
+				if (this.jiggleTimerID == initialID) {
+					this._jiggleTimerStart()
+				}
+			})
 	}
 
 	async startObserving() {
 		// TODO Highly consider syncing anything that was missed since stopObserving...
 		const chatID = await this.page.evaluate(() => window.__mautrixController.getCurrentChatID())
-		this.log(`Adding observers for ${chatID || "empty chat"}, and global timers`)
+		this.dlog.info(`Adding observers for ${chatID || "empty chat"}, and global timers`)
 		await this.page.evaluate(
 			() => window.__mautrixController.addChatListObserver())
 		if (chatID) {
@@ -662,7 +666,7 @@ export default class MessagesPuppeteer {
 	}
 
 	async stopObserving() {
-		this.log("Removing observers and timers")
+		this.dlog.info("Removing observers and timers")
 		await this.page.evaluate(
 			() => window.__mautrixController.removeChatListObserver())
 		await this.page.evaluate(
@@ -687,12 +691,12 @@ export default class MessagesPuppeteer {
 		//      Best to use this on startup when no chat is viewed.
 		let ownProfile
 		await this._interactWithPage(async () => {
-			this.log("Opening settings view")
+			this.dlog.info("Opening settings view")
 			await this.page.click("button.mdGHD01SettingBtn")
 			await this.page.waitForSelector("#context_menu li#settings", {visible: true}).then(e => e.click())
 			await this.page.waitForSelector("#settings_contents", {visible: true})
 
-			this.log("Getting own profile info")
+			this.dlog.info("Getting own profile info")
 			ownProfile = {
 				id: this.ownID,
 				name: await this.page.$eval("#settings_basic_name_input", e => e.innerText),
@@ -727,7 +731,7 @@ export default class MessagesPuppeteer {
 
 	async _switchChat(chatID, forceView = false) {
 		// TODO Allow passing in an element directly
-		this.log(`Switching to chat ${chatID}`)
+		this.dlog.info(`Switching to chat ${chatID}`)
 		let chatItem = await this.page.$(this._chatItemSelector(chatID))
 
 		let chatName
@@ -745,23 +749,23 @@ export default class MessagesPuppeteer {
 
 		if (!!chatItem && await this.page.evaluate(isCorrectChatVisible, chatName)) {
 			if (!forceView) {
-				this.log("Already viewing chat, no need to switch")
+				this.dlog.debug("Already viewing chat, no need to switch")
 			} else {
 				await this._interactWithPage(async () => {
-					this.log("Already viewing chat, but got request to view it")
+					this.dlog.debug("Already viewing chat, but got request to view it")
 					this.page.waitForTimeout(500)
 				})
 			}
 		} else {
-			this.log("Ensuring msg list observer is removed")
+			this.dlog.info("Ensuring msg list observer is removed")
 			const hadMsgListObserver = await this.page.evaluate(
 				() => window.__mautrixController.removeMsgListObserver())
-			this.log(hadMsgListObserver ? "Observer was already removed" : "Removed observer")
+			this.dlog.info(hadMsgListObserver ? "Observer was already removed" : "Removed observer")
 
 			let switchedTabs = false
 			let needRealClick = false
 			if (!chatItem) {
-				this.log(`Chat ${chatID} not in recents list`)
+				this.dlog.info(`Chat ${chatID} not in recents list`)
 
 				if (chatID.charAt(0) != "u") {
 					needRealClick = true
@@ -784,13 +788,13 @@ export default class MessagesPuppeteer {
 				// HTML of friend/group item titles ever diverge
 				chatName = await chatItem.evaluate(
 					chatID.charAt(0) == "u"
-					? element => window.__mautrixController.getFriendsListItemName(element)
-					: element => window.__mautrixController.getGroupListItemName(element))
+						? element => window.__mautrixController.getFriendsListItemName(element)
+						: element => window.__mautrixController.getGroupListItemName(element))
 			}
 
 			await this._retryUntilSuccess(3, "Clicking chat item didn't work...try again",
 				async () => {
-					this.log("Clicking chat item")
+					this.dlog.info("Clicking chat item")
 					if (!needRealClick) {
 						await chatItem.evaluate(e => e.click())
 					} else {
@@ -798,7 +802,7 @@ export default class MessagesPuppeteer {
 							await chatItem.click()
 						})
 					}
-					this.log(`Waiting for chat header title to be "${chatName}"`)
+					this.dlog.debug(`Waiting for chat header title to be "${chatName}"`)
 					await this.page.waitForFunction(
 						isCorrectChatVisible,
 						{polling: "mutation", timeout: 1000},
@@ -810,7 +814,7 @@ export default class MessagesPuppeteer {
 
 			await this._interactWithPage(async () => {
 				// Always show the chat details sidebar, as this makes life easier
-				this.log("Waiting for detail area to be auto-hidden upon entering chat")
+				this.dlog.debug("Waiting for detail area to be auto-hidden upon entering chat")
 				await this.page.waitForFunction(
 					detailArea => detailArea.childElementCount == 0,
 					{},
@@ -818,47 +822,47 @@ export default class MessagesPuppeteer {
 
 				await this._retryUntilSuccess(3, "Clicking chat header didn't work...try again",
 					async () => {
-						this.log("Clicking chat header to show detail area")
+						this.dlog.debug("Clicking chat header to show detail area")
 						await this.page.click("#_chat_header_area > .mdRGT04Link")
-						this.log("Waiting for detail area")
+						this.dlog.debug("Waiting for detail area")
 						await this.page.waitForSelector("#_chat_detail_area > .mdRGT02Info", {timeout: 1000})
 					})
 			})
 
-			this.log("Waiting for any item to appear in chat")
+			this.dlog.debug("Waiting for any item to appear in chat")
 			try {
 				await this.page.waitForSelector("#_chat_room_msg_list div", {timeout: 2000})
 
-				this.log("Waiting for chat to stabilize")
+				this.dlog.debug("Waiting for chat to stabilize")
 				await this.page.evaluate(() => window.__mautrixController.waitForMessageListStability())
 			} catch (e) {
-				this.log("No messages in chat found. Maybe no messages were ever sent yet?")
+				this.dlog.warn("No messages in chat found. Maybe no messages were ever sent yet?")
 			}
 
 			if (hadMsgListObserver) {
-				this.log("Restoring msg list observer")
+				this.dlog.debug("Restoring msg list observer")
 				await this.page.evaluate(
 					(mostRecentMessage) => window.__mautrixController.addMsgListObserver(mostRecentMessage),
 					this.mostRecentMessages.get(chatID))
 			} else {
-				this.log("Not restoring msg list observer, as there never was one")
+				this.dlog.debug("Not restoring msg list observer, as there never was one")
 			}
 		}
 	}
 
 	async _getChatInfoUnsafe(chatID, forceView) {
 		// TODO Commonize this
-		let [isDirect, isGroup, isRoom] = [false,false,false]
+		let [isDirect, isGroup, isRoom] = [false, false, false]
 		switch (chatID.charAt(0)) {
-		case "u":
-			isDirect = true
-			break
-		case "c":
-			isGroup = true
-			break
-		case "r":
-			isRoom = true
-			break
+			case "u":
+				isDirect = true
+				break
+			case "c":
+				isGroup = true
+				break
+			case "r":
+				isRoom = true
+				break
 		}
 
 		const chatListItem = await this.page.$(this._chatItemSelector(chatID))
@@ -872,7 +876,7 @@ export default class MessagesPuppeteer {
 					(element, chatID) => window.__mautrixController.parseFriendsListItem(element, chatID),
 					chatID)
 
-				this.log(`Found NEW direct chat with ${chatID}`)
+				this.dlog.info(`Found NEW direct chat with ${chatID}`)
 				return {
 					participants: [friendsListInfo],
 					id: chatID,
@@ -893,7 +897,7 @@ export default class MessagesPuppeteer {
 
 		let participants
 		if (!isDirect) {
-			this.log("Found multi-user chat, so viewing it to get participants")
+			this.dlog.info("Found multi-user chat, so viewing it to get participants")
 			// TODO This will mark the chat as "read"!
 			await this._switchChat(chatID, forceView)
 			const participantList = await this.page.$("#_chat_detail_area > .mdRGT02Info ul.mdRGT13Ul")
@@ -902,9 +906,9 @@ export default class MessagesPuppeteer {
 			participants = await participantList.evaluate(
 				element => window.__mautrixController.parseParticipantList(element))
 		} else {
-			this.log(`Found direct chat with ${chatID}`)
+			this.dlog.info(`Found direct chat with ${chatID}`)
 			if (forceView) {
-				this.log("Viewing chat on request")
+				this.dlog.info("Viewing chat on request")
 				await this._switchChat(chatID, forceView)
 			}
 			//const chatDetailArea = await this.page.waitForSelector("#_chat_detail_area > .mdRGT02Info")
@@ -916,9 +920,9 @@ export default class MessagesPuppeteer {
 			}]
 		}
 
-		this.log("Found participants:")
+		this.dlog.info("Found participants:")
 		for (const participant of participants) {
-			this.log(JSON.stringify(participant))
+			this.dlog.debug(JSON.stringify(participant))
 		}
 		return {participants, ...chatListInfo}
 	}
@@ -965,16 +969,16 @@ export default class MessagesPuppeteer {
 
 		try {
 			this._interactWithPage(async () => {
-				this.log(`About to ask for file chooser in ${chatID}`)
+				this.dlog.info(`About to ask for file chooser in ${chatID}`)
 				const [fileChooser] = await Promise.all([
 					this.page.waitForFileChooser(),
 					this.page.click("#_chat_room_plus_btn")
 				])
-				this.log(`About to upload ${filePath}`)
+				this.dlog.info(`About to upload ${filePath}`)
 				await fileChooser.accept([filePath])
 			})
 		} catch (e) {
-			this.log(`Failed to upload file to ${chatID}`)
+			this.dlog.error(`Failed to upload file to ${chatID}`)
 			return -1
 		}
 
@@ -983,16 +987,16 @@ export default class MessagesPuppeteer {
 
 	async _waitForSentMessage(chatID) {
 		try {
-			this.log("Waiting for message to be sent")
+			this.dlog.debug("Waiting for message to be sent")
 			const id = await this.page.evaluate(
 				() => window.__mautrixController.waitForOwnMessage())
-			this.log(`Successfully sent message ${id} to ${chatID}`)
+			this.dlog.debug(`Successfully sent message ${id} to ${chatID}`)
 			this.mostRecentMessages.set(chatID, id)
 			this.mostRecentOwnMessages.set(chatID, id)
 			return id
 		} catch (e) {
 			// TODO Catch if something other than a timeout
-			this.error(`Timed out sending message to ${chatID}`)
+			this.dlog.error(`Timed out sending message to ${chatID}`)
 			// TODO Figure out why e is undefined...
 			//this.error(e)
 			return -1
@@ -1006,19 +1010,19 @@ export default class MessagesPuppeteer {
 		if (this.client) {
 			for (const message of messages) {
 				this.client.sendMessage(message).catch(err =>
-					this.error("Failed to send message", message.id, "to client:", err))
+					this.dlog.error("Failed to send message", message.id, "to client:", err))
 			}
 		} else {
-			this.log("No client connected, not sending messages")
+			this.dlog.info("No client connected, not sending messages")
 		}
 	}
 
 	async _getMessagesUnsafe(chatID) {
 		// TODO Consider making a wrapper for pausing/resuming the msg list observers
-		this.log("Ensuring msg list observer is removed")
+		this.dlog.info("Ensuring msg list observer is removed")
 		const hadMsgListObserver = await this.page.evaluate(
 			() => window.__mautrixController.removeMsgListObserver())
-		this.log(hadMsgListObserver ? "Observer was already removed" : "Removed observer")
+		this.dlog.info(hadMsgListObserver ? "Observer was already removed" : "Removed observer")
 
 		// TODO Handle unloaded messages. Maybe scroll up
 		// TODO This will mark the chat as "read"!
@@ -1039,14 +1043,14 @@ export default class MessagesPuppeteer {
 		// Sync receipts seen from newly-synced messages
 		// TODO When user leaves, clear the read-by count for the old number of other participants
 		let minCountToFind = 1
-		for (let i = messages.length-1; i >= 0; i--) {
+		for (let i = messages.length - 1; i >= 0; i--) {
 			const message = messages[i]
 			if (!message.is_outgoing) {
 				continue
 			}
 			const count = message.receipt_count
 			if (count >= minCountToFind && message.id > (receiptMap.get(count) || 0)) {
-				minCountToFind = count+1
+				minCountToFind = count + 1
 				receiptMap.set(count, message.id)
 			}
 			// TODO Early exit when count == num other participants
@@ -1065,12 +1069,12 @@ export default class MessagesPuppeteer {
 
 
 		if (hadMsgListObserver) {
-			this.log("Restoring msg list observer")
+			this.dlog.info("Restoring msg list observer")
 			await this.page.evaluate(
 				mostRecentMessage => window.__mautrixController.addMsgListObserver(mostRecentMessage),
 				this.mostRecentMessages.get(chatID))
 		} else {
-			this.log("Not restoring msg list observer, as there never was one")
+			this.dlog.info("Not restoring msg list observer, as there never was one")
 		}
 
 		return {
@@ -1089,7 +1093,7 @@ export default class MessagesPuppeteer {
 			const newLastID = filteredMessages[filteredMessages.length - 1].id
 			this.mostRecentMessages.set(chatID, newLastID)
 			const range = newFirstID === newLastID ? newFirstID : `${newFirstID}-${newLastID}`
-			this.log(`Loaded ${messages.length} messages in ${chatID}, got ${filteredMessages.length} newer than ${minID} (${range})`)
+			this.dlog.info(`Loaded ${messages.length} messages in ${chatID}, got ${filteredMessages.length} newer than ${minID} (${range})`)
 			for (const message of filteredMessages) {
 				message.chat_id = chatID
 			}
@@ -1130,14 +1134,14 @@ export default class MessagesPuppeteer {
 	async _processChatListChangeUnsafe(chatListInfo) {
 		const chatID = chatListInfo.id
 		this.updatedChats.delete(chatID)
-		this.log("Processing change to", chatID)
+		this.dlog.info("Processing change to", chatID)
 		// TODO Also process name/icon changes
 
 		const prevNumNotifications = this.numChatNotifications.get(chatID) || 0
 		const diffNumNotifications = chatListInfo.notificationCount - prevNumNotifications
 
 		if (chatListInfo.notificationCount == 0 && diffNumNotifications < 0) {
-			this.log("Notifications dropped--must have read messages from another LINE client, skip")
+			this.dlog.info("Notifications dropped--must have read messages from another LINE client, skip")
 			this.numChatNotifications.set(chatID, 0)
 			return
 		}
@@ -1146,12 +1150,12 @@ export default class MessagesPuppeteer {
 			// If >1, a notification was missed. Only way to get them is to view the chat.
 			// If == 0, might be own message...or just a shuffled chat, or something else.
 			// To play it safe, just sync them. Should be no harm, as they're viewed already.
-			   diffNumNotifications != 1
+			diffNumNotifications != 1
 			// Without placeholders, some messages require visiting their chat to be synced.
 			|| !this.sendPlaceholders
 			&& (
 				// Can only use previews for DMs, because sender can't be found otherwise!
-				   chatListInfo.id.charAt(0) != 'u'
+				chatListInfo.id.charAt(0) != 'u'
 				// Sync when lastMsg is a canned message for a non-previewable message type.
 				|| chatListInfo.lastMsg.endsWith(" sent a photo.")
 				|| chatListInfo.lastMsg.endsWith(" sent a sticker.")
@@ -1181,25 +1185,25 @@ export default class MessagesPuppeteer {
 		const {messages, receipts} = await this._getMessagesUnsafe(chatID)
 
 		if (messages.length == 0) {
-			this.log("No new messages found in", chatID)
+			this.dlog.info("No new messages found in", chatID)
 		} else {
 			this._receiveMessages(chatID, messages, true)
 		}
 
 		if (receipts.length == 0) {
-			this.log("No new receipts found in", chatID)
+			this.dlog.info("No new receipts found in", chatID)
 		} else {
 			this._receiveReceiptMulti(chatID, receipts, true)
 		}
 	}
 
 	_receiveChatListChanges(changes) {
-		this.log(`Received chat list changes: ${changes.map(item => item.id)}`)
+		this.dlog.info(`Received chat list changes: ${changes.map(item => item.id)}`)
 		for (const item of changes) {
 			if (!this.updatedChats.has(item.id)) {
 				this.updatedChats.add(item.id)
 				this.taskQueue.push(() => this._processChatListChangeUnsafe(item))
-					.catch(err => this.error("Error handling chat list changes:", err))
+					.catch(err => this.dlog.error("Error handling chat list changes:", err))
 			}
 		}
 	}
@@ -1208,17 +1212,17 @@ export default class MessagesPuppeteer {
 		const receiptMap = this._getReceiptMap(chat_id)
 		const prevReceiptID = (receiptMap.get(1) || 0)
 		if (receipt_id <= prevReceiptID) {
-			this.log(`Received OUTDATED read receipt ${receipt_id} (older than ${prevReceiptID}) for chat ${chat_id}`)
+			this.dlog.info(`Received OUTDATED read receipt ${receipt_id} (older than ${prevReceiptID}) for chat ${chat_id}`)
 			return
 		}
 		receiptMap.set(1, receipt_id)
 
-		this.log(`Received read receipt ${receipt_id} (since ${prevReceiptID}) for chat ${chat_id}`)
+		this.dlog.info(`Received read receipt ${receipt_id} (since ${prevReceiptID}) for chat ${chat_id}`)
 		if (this.client) {
 			this.client.sendReceipt({chat_id: chat_id, id: receipt_id})
-				.catch(err => this.error("Error handling read receipt:", err))
+				.catch(err => this.dlog.error("Error handling read receipt:", err))
 		} else {
-			this.log("No client connected, not sending receipts")
+			this.dlog.info("No client connected, not sending receipts")
 		}
 	}
 
@@ -1236,29 +1240,29 @@ export default class MessagesPuppeteer {
 				}
 			})
 			if (receipts.length == 0) {
-				this.log(`Received ALL OUTDATED bulk read receipts for chat ${chat_id}:`, receipts)
+				this.dlog.info(`Received ALL OUTDATED bulk read receipts for chat ${chat_id}:`, receipts)
 				return
 			}
 			this._trimReceiptMap(receiptMap)
 		}
 
-		this.log(`Received bulk read receipts for chat ${chat_id}:`, receipts)
+		this.dlog.info(`Received bulk read receipts for chat ${chat_id}:`, receipts)
 		if (this.client) {
 			for (const receipt of receipts) {
 				receipt.chat_id = chat_id
 				try {
 					await this.client.sendReceipt(receipt)
-				} catch(err) {
-					this.error("Error handling read receipt:", err)
+				} catch (err) {
+					this.dlog.error("Error handling read receipt:", err)
 				}
 			}
 		} else {
-			this.log("No client connected, not sending receipts")
+			this.dlog.info("No client connected, not sending receipts")
 		}
 	}
 
 	async _sendEmailCredentials() {
-		this.log("Inputting login credentials")
+		this.dlog.info("Inputting login credentials")
 		await this._enterText(await this.page.$("#line_login_email"), this.login_email)
 		await this._enterText(await this.page.$("#line_login_pwd"), this.login_password)
 		await this.page.click("button#login_btn")
@@ -1267,51 +1271,51 @@ export default class MessagesPuppeteer {
 	_receiveQRChange(url) {
 		if (this.client) {
 			this.client.sendQRCode(url).catch(err =>
-				this.error("Failed to send new QR to client:", err))
+				this.dlog.error("Failed to send new QR to client:", err))
 		} else {
-			this.log("No client connected, not sending new QR")
+			this.dlog.warn("No client connected, not sending new QR")
 		}
 	}
 
 	_receivePIN(pin) {
 		if (this.client) {
 			this.client.sendPIN(pin).catch(err =>
-				this.error("Failed to send new PIN to client:", err))
+				this.dlog.error("Failed to send new PIN to client:", err))
 		} else {
-			this.log("No client connected, not sending new PIN")
+			this.dlog.warn("No client connected, not sending new PIN")
 		}
 	}
 
 	_sendLoginSuccess() {
-		this.error("Login success")
+		this.dlog.info("Login success")
 		if (this.client) {
 			this.client.sendLoginSuccess().catch(err =>
-				this.error("Failed to send login success to client:", err))
+				this.dlog.error("Failed to send login success to client:", err))
 		} else {
-			this.log("No client connected, not sending login success")
+			this.dlog.warn("No client connected, not sending login success")
 		}
 	}
 
 	_sendLoginFailure(reason) {
 		this.loginRunning = false
-		this.error(`Login failure: ${reason ? reason : "cancelled"}`)
+		this.dlog.error(`Login failure: ${reason ? reason : "cancelled"}`)
 		if (this.client) {
 			this.client.sendLoginFailure(reason).catch(err =>
-				this.error("Failed to send login failure to client:", err))
+				this.dlog.error("Failed to send login failure to client:", err))
 		} else {
-			this.log("No client connected, not sending login failure")
+			this.dlog.warn("No client connected, not sending login failure")
 		}
 	}
 
 	_onLoggedOut() {
-		this.log("Got logged out!")
+		this.dlog.info("Got logged out!")
 		this.stopObserving()
 		this.page.bringToFront()
 		if (this.client) {
 			this.client.sendLoggedOut().catch(err =>
-				this.error("Failed to send logout notice to client:", err))
+				this.dlog.error("Failed to send logout notice to client:", err))
 		} else {
-			this.log("No client connected, not sending logout notice")
+			this.dlog.warn("No client connected, not sending logout notice")
 		}
 	}
 }
