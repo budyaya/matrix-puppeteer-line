@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import MessagesPuppeteer from "./puppet.js"
-import { emitLines, promisify } from "./util.js"
+import {emitLines, promisify} from "./util.js"
+import logger from "loglevel";
 
 export default class Client {
 	/**
@@ -28,31 +29,27 @@ export default class Client {
 		this.manager = manager
 		this.socket = socket
 		this.connID = connID
-		this.userID = userID
 		this.puppet = puppet
 		this.stopped = false
 		this.notificationID = 0
 		this.maxCommandID = 0
-	}
-
-	log(...text) {
-		if (this.userID) {
-			console.log(`[API/${this.userID}/${this.connID}]`, ...text)
-		} else {
-			console.log(`[API/${this.connID}]`, ...text)
+		this.set_userID(userID)
+		if (!this.userID) {
+			this.log = require("loglevel").getLogger(`API/${this.connID}`)
+			this.log.setLevel(logger.getLogger("API").getLevel())
 		}
 	}
 
-	error(...text) {
+	set_userID(ID) {
+		this.userID = ID
 		if (this.userID) {
-			console.error(`[API/${this.userID}/${this.connID}]`, ...text)
-		} else {
-			console.error(`[API/${this.connID}]`, ...text)
+			this.log = require("loglevel").getLogger(`API/${this.userID}/${this.connID}`)
+			this.log.setLevel(logger.getLogger(`API/${this.connID}`).getLevel())
 		}
 	}
 
 	start() {
-		this.log("Received connection", this.connID)
+		this.log.info("Received connection", this.connID)
 		emitLines(this.socket)
 		this.socket.on("line", line => this.handleLine(line)
 			.catch(err => this.log("Error handling line:", err)))
@@ -60,7 +57,7 @@ export default class Client {
 
 		setTimeout(() => {
 			if (!this.userID && !this.stopped) {
-				this.log("Didn't receive register request within 3 seconds, terminating")
+				this.log.warn("Didn't receive register request within 3 seconds, terminating")
 				this.stop("Register request timeout")
 			}
 		}, 3000)
@@ -72,10 +69,10 @@ export default class Client {
 		}
 		this.stopped = true
 		try {
-			await this._write({ id: --this.notificationID, command: "quit", error })
+			await this._write({id: --this.notificationID, command: "quit", error})
 			await promisify(cb => this.socket.end(cb))
 		} catch (err) {
-			this.error("Failed to end connection:", err)
+			this.log.error("Failed to end connection:", err)
 			this.socket.destroy(err)
 		}
 	}
@@ -85,7 +82,7 @@ export default class Client {
 		if (this.userID && this.manager.clients.get(this.userID) === this) {
 			this.manager.clients.delete(this.userID)
 		}
-		this.log(`Connection closed (user: ${this.userID})`)
+		this.log.info(`Connection closed (user: ${this.userID})`)
 	}
 
 	/**
@@ -99,7 +96,7 @@ export default class Client {
 	}
 
 	sendMessage(message) {
-		this.log(`Sending message ${message.id || "with no ID"} to client`)
+		this.log.debug(`Sending message ${message.id || "with no ID"} to client`)
 		return this._write({
 			id: --this.notificationID,
 			command: "message",
@@ -109,7 +106,7 @@ export default class Client {
 	}
 
 	sendReceipt(receipt) {
-		this.log(`Sending read receipt (${receipt.count || "DM"}) of msg ${receipt.id} for chat ${receipt.chat_id}`)
+		this.log.debug(`Sending read receipt (${receipt.count || "DM"}) of msg ${receipt.id} for chat ${receipt.chat_id}`)
 		return this._write({
 			id: --this.notificationID,
 			command: "receipt",
@@ -118,7 +115,7 @@ export default class Client {
 	}
 
 	sendQRCode(url) {
-		this.log(`Sending QR ${url} to client`)
+		this.log.debug(`Sending QR ${url} to client`)
 		return this._write({
 			id: --this.notificationID,
 			command: "qr",
@@ -127,7 +124,7 @@ export default class Client {
 	}
 
 	sendPIN(pin) {
-		this.log(`Sending PIN ${pin} to client`)
+		this.log.debug(`Sending PIN ${pin} to client`)
 		return this._write({
 			id: --this.notificationID,
 			command: "pin",
@@ -136,7 +133,7 @@ export default class Client {
 	}
 
 	sendLoginSuccess() {
-		this.log("Sending login success to client")
+		this.log.debug("Sending login success to client")
 		return this._write({
 			id: --this.notificationID,
 			command: "login_success",
@@ -144,7 +141,7 @@ export default class Client {
 	}
 
 	sendLoginFailure(reason) {
-		this.log(`Sending login failure to client${reason ? `: "${reason}"` : ""}`)
+		this.log.debug(`Sending login failure to client${reason ? `: "${reason}"` : ""}`)
 		return this._write({
 			id: --this.notificationID,
 			command: "login_failure",
@@ -153,7 +150,7 @@ export default class Client {
 	}
 
 	sendLoggedOut() {
-		this.log("Sending logout notice to client")
+		this.log.debug("Sending logout notice to client")
 		return this._write({
 			id: --this.notificationID,
 			command: "logged_out",
@@ -163,7 +160,7 @@ export default class Client {
 	handleStart = async (req) => {
 		let started = false
 		if (this.puppet === null) {
-			this.log("Opening new puppeteer for", this.userID)
+			this.log.info("Opening new puppeteer for", this.userID)
 			this.puppet = new MessagesPuppeteer(this.userID, this.ownID, this.sendPlaceholders, this)
 			this.manager.puppets.set(this.userID, this.puppet)
 			await this.puppet.start(!!req.debug)
@@ -179,13 +176,13 @@ export default class Client {
 
 	handleStop = async () => {
 		if (this.puppet === null) {
-			return { stopped: false }
+			return {stopped: false}
 		}
-		this.log("Closing puppeteer for", this.userID)
+		this.log.info("Closing puppeteer for", this.userID)
 		this.manager.puppets.delete(this.userID)
 		await this.puppet.stop()
 		this.puppet = null
-		return { stopped: true }
+		return {stopped: true}
 	}
 
 	handleUnknownCommand = () => {
@@ -193,14 +190,14 @@ export default class Client {
 	}
 
 	handleRegister = async (req) => {
-		this.userID = req.user_id
+		this.set_userID(req.user_id)
 		this.ownID = req.own_id
 		this.sendPlaceholders = req.ephemeral_events
-		this.log(`Registered socket ${this.connID} -> ${this.userID}${!this.sendPlaceholders ? "" : " (with placeholder message support)"}`)
+		this.log.info(`Registered socket ${this.connID} -> ${this.userID}${!this.sendPlaceholders ? "" : " (with placeholder message support)"}`)
 		if (this.manager.clients.has(this.userID)) {
 			const oldClient = this.manager.clients.get(this.userID)
 			this.manager.clients.set(this.userID, this)
-			this.log(`Terminating previous socket ${oldClient.connID} for ${this.userID}`)
+			this.log.info(`Terminating previous socket ${oldClient.connID} for ${this.userID}`)
 			await oldClient.stop("Socket replaced by new connection")
 		} else {
 			this.manager.clients.set(this.userID, this)
@@ -209,41 +206,41 @@ export default class Client {
 		if (this.puppet) {
 			this.puppet.client = this
 		}
-		return { client_exists: this.puppet !== null }
+		return {client_exists: this.puppet !== null}
 	}
 
 	async handleLine(line) {
 		if (this.stopped) {
-			this.log("Ignoring line, client is stopped")
+			this.log.info("Ignoring line, client is stopped")
 			return
 		}
 		let req
 		try {
 			req = JSON.parse(line)
 		} catch (err) {
-			this.log("Non-JSON request:", line)
+			this.log.error("Non-JSON request:", line)
 			return
 		}
 		if (!req.command || !req.id) {
-			this.log("Invalid request:", line)
+			this.log.error("Invalid request:", line)
 			return
 		}
 		if (req.id <= this.maxCommandID) {
-			this.log("Ignoring old request", req.id)
+			this.log.warn("Ignoring old request", req.id)
 			return
 		}
 		if (req.command != "is_connected") {
-			this.log("Received request", req.id, "with command", req.command)
+			this.log.info("Received request", req.id, "with command", req.command)
 		}
 		this.maxCommandID = req.id
 		let handler
 		if (!this.userID) {
 			if (req.command !== "register") {
-				this.log("First request wasn't a register request, terminating")
+				this.log.info("First request wasn't a register request, terminating")
 				await this.stop("Invalid first request")
 				return
 			} else if (!req.user_id) {
-				this.log("Register request didn't contain user ID, terminating")
+				this.log.info("Register request didn't contain user ID, terminating")
 				await this.stop("Invalid register request")
 				return
 			}
@@ -267,17 +264,17 @@ export default class Client {
 				get_chat: req => this.puppet.getChatInfo(req.chat_id, req.force_view),
 				get_messages: req => this.puppet.getMessages(req.chat_id),
 				read_image: req => this.puppet.readImage(req.image_url),
-				is_connected: async () => ({ is_connected: !await this.puppet.isDisconnected() }),
+				is_connected: async () => ({is_connected: !await this.puppet.isDisconnected()}),
 			}[req.command] || this.handleUnknownCommand
 		}
-		const resp = { id: req.id }
+		const resp = {id: req.id}
 		try {
 			resp.command = "response"
 			resp.response = await handler(req)
 		} catch (err) {
 			resp.command = "error"
 			resp.error = err.toString()
-			this.log("Error handling request", req.id, err)
+			this.log.error("Error handling request", req.id, err)
 		}
 		await this._write(resp)
 	}

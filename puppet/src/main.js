@@ -50,6 +50,8 @@ logger.setLevel(clog ? clog.default_level || 3 : 3)
 logger.getLogger("Puppeteer").setLevel(clogpup ? clogpup.level || logger.getLevel() : logger.getLevel())
 logger.getLogger("Puppeteer_details").setLevel(clogpup ? clogpup.details || 3 : 3)
 logger.getLogger("Puppeteer_spammer").setLevel(clogpup ? clogpup.spammer || 3 : 3)
+logger.getLogger("TaskQueue").setLevel(clog ? clog.task_queue || 3 : 3)
+logger.getLogger("API").setLevel(clog ? clog.api || 3 : 3)
 // Register and specify the logger format. Others will inherit
 loggerprefix.reg(logger)
 loggerprefix.apply(logger, {template: '[%n] %l:'});

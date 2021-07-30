@@ -16,7 +16,6 @@
 import net from "net"
 import fs from "fs"
 import path from "path"
-import logger from "loglevel"
 
 import Client from "./client.js"
 import { promisify } from "./util.js"
@@ -30,10 +29,7 @@ export default class PuppetAPI {
 		this.clients = new Map()
 		this.connIDSequence = 0
 		this.stopped = false
-	}
-
-	log(...text) {
-		console.log("[API]", ...text)
+		this.log = require("loglevel").getLogger("API")
 	}
 
 	acceptConnection = sock => {
@@ -58,16 +54,16 @@ export default class PuppetAPI {
 		} catch (err) {}
 		await promisify(cb => this.server.listen(socketPath, cb))
 		await fs.promises.chmod(socketPath, 0o700)
-		logger.info("Now listening at", socketPath)
+		this.log.info("Now listening at", socketPath)
 	}
 
 	async startTCP(port, host) {
 		await promisify(cb => this.server.listen(port, host, cb))
-		logger.info(`Now listening at ${host || ""}:${port}`)
+		this.log.info(`Now listening at ${host || ""}:${port}`)
 	}
 
 	async start() {
-		this.log("Starting server")
+		this.log.info("Starting server")
 
 		if (this.listenConfig.type === "unix") {
 			await this.startUnix(this.listenConfig.path)
@@ -85,14 +81,14 @@ export default class PuppetAPI {
 			socket.end()
 			socket.destroy()
 		}
-		this.log("Stopping server")
+		this.log.info("Stopping server")
 		await promisify(cb => this.server.close(cb))
 		if (this.listenConfig.type === "unix") {
 			try {
 				await fs.promises.unlink(this.listenConfig.path)
 			} catch (err) {}
 		}
-		this.log("Stopping puppets")
+		this.log.info("Stopping puppets")
 		for (const puppet of this.puppets.values()) {
 			await puppet.stop()
 		}

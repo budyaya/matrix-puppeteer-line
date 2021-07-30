@@ -13,6 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import logger from "loglevel"
 
 export default class TaskQueue {
 	constructor(id) {
@@ -20,21 +21,15 @@ export default class TaskQueue {
 		this._tasks = []
 		this.running = false
 		this._wakeup = null
-	}
-
-	log(...text) {
-		console.log(`[TaskQueue/${this.id}]`, ...text)
-	}
-
-	error(...text) {
-		console.error(`[TaskQueue/${this.id}]`, ...text)
+		this.log = logger.getLogger(`TaskQueue/${this.id}`)
+		this.log.setLevel(logger.getLogger("TaskQueue").getLevel())
 	}
 
 	async _run() {
-		this.log("Started processing tasks")
+		this.log.info("Started processing tasks")
 		while (this.running) {
 			if (this._tasks.length === 0) {
-				this.log("Sleeping until a new task is received")
+				this.log.debug("Sleeping until a new task is received")
 				await new Promise(resolve => this._wakeup = () => {
 					resolve()
 					this._wakeup = null
@@ -42,12 +37,12 @@ export default class TaskQueue {
 				if (!this.running) {
 					break
 				}
-				this.log("Continuing processing tasks")
+				this.log.debug("Continuing processing tasks")
 			}
 			const { task, resolve, reject } = this._tasks.shift()
 			await task().then(resolve, reject)
 		}
-		this.log("Stopped processing tasks")
+		this.log.info("Stopped processing tasks")
 	}
 
 	/**
@@ -79,7 +74,7 @@ export default class TaskQueue {
 			return
 		}
 		this.running = true
-		this._run().catch(err => this.error("Fatal error processing tasks:", err))
+		this._run().catch(err => this.log.error("Fatal error processing tasks:", err))
 	}
 
 	/**
