@@ -82,7 +82,7 @@ export default class MessagesPuppeteer {
 			`--window-size=${MessagesPuppeteer.viewport.width},${MessagesPuppeteer.viewport.height+120}`,
 		]
 		if (MessagesPuppeteer.noSandbox) {
-			args.push(`--no-sandbox`)
+			args = args.concat(`--no-sandbox`)
 		}
 
 		this.browser = await puppeteer.launch({
@@ -729,6 +729,38 @@ export default class MessagesPuppeteer {
 		return `#joined_group_list_body > li[data-chatid="${id}"]`
 	}
 
+	async _getWholeContactResults(page, distance) {
+		await page.bringToFront()
+		await page.waitForSelector("#contact_wrap_friends > ul.MdCMN03List")
+	
+		const contactTotalCount =0
+		this.log(` distance  is  ${distance}`)
+		let incred = 0
+		const element = await page.$(this._contactCountSelector())
+		const foundContactCount = await element.evaluate(
+			element => {
+				return Number.parseInt(element?.innerText) || 0
+			})
+		this.log(` contact_friend_count  is  ${foundContactCount}`)
+		//infiniting contact list scrolling
+		while (incred <= distance) {
+			if (foundContactCount <= contactTotalCount) {
+				return
+			}
+			incred += 100
+			this.log(`scrollPosition  at  ${incred}/${distance}`)
+			await page.evaluate(d => {
+				const scrollableSection = document.querySelector("#contact_mode_contact_list");
+				scrollableSection.scrollTop = 300 + scrollableSection.offsetHeight + d;
+			}, incred);
+
+		}
+		const $lis = await page.$$("#contact_wrap_friends > ul.MdCMN03List >li")
+		//lookup lazy loading count
+		const lis = $lis.slice(contactTotalCount, Math.Infinity)
+		contactTotalCount=$lis.length	
+	}
+
 	async _switchChat(chatID, forceView = false) {
 		// TODO Allow passing in an element directly
 		this.log(`Switching to chat ${chatID}`)
@@ -777,7 +809,30 @@ export default class MessagesPuppeteer {
 					}
 					chatItem = await this.page.$(this._groupItemSelector(chatID))
 				} else {
+					needRealClick = true
+					const unselectedTabButton = await this.page.$(`#leftSide li[data-type=friends_list] > button:not(.ExSelected)`)
+					if (unselectedTabButton) {
+						switchedTabs = true
+						await unselectedTabButton.evaluate(e => e.click())
+						await this.page.waitForSelector("#wrap_contact_list > div.MdScroll")
+
+						let ulstyleheight = await this.page.evaluate(() => {
+							const ulList = document.querySelector('#contact_wrap_friends > ul.MdCMN03List')
+							return getComputedStyle(ulList).getPropertyValue("height")
+						})
+						const leg = parseInt(ulstyleheight, 10)
+						this.log(`found contact_wrap_friends height is ${leg}px`)
+						this.log(`starting to scroll to buttom`)
+						await this._getWholeContactResults(this.page, leg)
+
+						this.log(`finished to scroll to buttom`)
+					}
+					await this.page.waitForTimeout(300)
 					chatItem = await this.page.$(this._friendItemSelector(chatID))
+					this.log(`Chat ${chatID} not in recents list, so bot is creating a new chat`)
+					await this._interactWithPage(async () => {
+						await chatItem.click()
+					})
 				}
 
 				if (!chatItem) {
