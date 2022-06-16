@@ -82,7 +82,7 @@ export default class MessagesPuppeteer {
 			`--window-size=${MessagesPuppeteer.viewport.width},${MessagesPuppeteer.viewport.height+120}`,
 		]
 		if (MessagesPuppeteer.noSandbox) {
-			args = args.concat(`--no-sandbox`)
+			args.push(`--no-sandbox`)
 		}
 
 		this.browser = await puppeteer.launch({
@@ -732,7 +732,7 @@ export default class MessagesPuppeteer {
 	async _getWholeContactResults(page, distance) {
 		await page.bringToFront()
 		await page.waitForSelector("#contact_wrap_friends > ul.MdCMN03List")
-	
+		const results = []
 		const contactTotalCount =0
 		this.log(` distance  is  ${distance}`)
 		let incred = 0
@@ -742,7 +742,6 @@ export default class MessagesPuppeteer {
 				return Number.parseInt(element?.innerText) || 0
 			})
 		this.log(` contact_friend_count  is  ${foundContactCount}`)
-		//infiniting contact list scrolling
 		while (incred <= distance) {
 			if (foundContactCount <= contactTotalCount) {
 				return
@@ -823,7 +822,7 @@ export default class MessagesPuppeteer {
 						const leg = parseInt(ulstyleheight, 10)
 						this.log(`found contact_wrap_friends height is ${leg}px`)
 						this.log(`starting to scroll to buttom`)
-						await this._getWholeContactResults(this.page, leg)
+						const results = await this._getWholeContactResults(this.page, leg)
 
 						this.log(`finished to scroll to buttom`)
 					}
