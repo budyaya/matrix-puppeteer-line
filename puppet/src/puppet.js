@@ -79,7 +79,7 @@ export default class MessagesPuppeteer {
 		const args = [
 			`--disable-extensions-except=${MessagesPuppeteer.extensionDir}`,
 			`--load-extension=${MessagesPuppeteer.extensionDir}`,
-			`--window-size=${MessagesPuppeteer.viewport.width},${MessagesPuppeteer.viewport.height+120}`,
+			`--window-size=${MessagesPuppeteer.viewport.width},${MessagesPuppeteer.viewport.height + 120}`,
 		]
 		if (MessagesPuppeteer.noSandbox) {
 			args.push(`--no-sandbox`)
@@ -196,7 +196,7 @@ export default class MessagesPuppeteer {
 	 * @param {string} text                - The text to input.
 	 */
 	async _enterText(inputElement, text) {
-		await inputElement.click({clickCount: 3})
+		await inputElement.click({ clickCount: 3 })
 		await inputElement.type(text)
 	}
 
@@ -213,45 +213,45 @@ export default class MessagesPuppeteer {
 		const loginContentArea = await this.page.waitForSelector("#login_content")
 
 		switch (login_type) {
-		case "qr": {
-			this.log("Running QR login")
-			const qrButton = await this.page.waitForSelector("#login_qr_btn")
-			await qrButton.click()
+			case "qr": {
+				this.log("Running QR login")
+				const qrButton = await this.page.waitForSelector("#login_qr_btn")
+				await qrButton.click()
 
-			const qrElement = await this.page.waitForSelector("#login_qrcode_area div[title]", {visible: true})
-			const currentQR = await this.page.evaluate(element => element.title, qrElement)
-			this._receiveQRChange(currentQR)
+				const qrElement = await this.page.waitForSelector("#login_qrcode_area div[title]", { visible: true })
+				const currentQR = await this.page.evaluate(element => element.title, qrElement)
+				this._receiveQRChange(currentQR)
 
-			await this.page.evaluate(
-				element => window.__mautrixController.addQRChangeObserver(element), qrElement)
-			await this.page.evaluate(
-				element => window.__mautrixController.addQRAppearObserver(element), loginContentArea)
+				await this.page.evaluate(
+					element => window.__mautrixController.addQRChangeObserver(element), qrElement)
+				await this.page.evaluate(
+					element => window.__mautrixController.addQRAppearObserver(element), loginContentArea)
 
-			break
-		}
-		case "email": {
-			this.log("Running email login")
-			if (!login_data) {
-				this._sendLoginFailure("No login credentials provided for email login")
-				return
+				break
 			}
+			case "email": {
+				this.log("Running email login")
+				if (!login_data) {
+					this._sendLoginFailure("No login credentials provided for email login")
+					return
+				}
 
-			const emailButton = await this.page.waitForSelector("#login_email_btn")
-			await emailButton.click()
+				const emailButton = await this.page.waitForSelector("#login_email_btn")
+				await emailButton.click()
 
-			await this.page.waitForSelector("#login_email_area", {visible: true})
-			this.login_email = login_data["email"]
-			this.login_password = login_data["password"]
-			await this._sendEmailCredentials()
+				await this.page.waitForSelector("#login_email_area", { visible: true })
+				this.login_email = login_data["email"]
+				this.login_password = login_data["password"]
+				await this._sendEmailCredentials()
 
-			await this.page.evaluate(
-				element => window.__mautrixController.addEmailAppearObserver(element), loginContentArea)
+				await this.page.evaluate(
+					element => window.__mautrixController.addEmailAppearObserver(element), loginContentArea)
 
-			break
-		}
-		default:
-			this._sendLoginFailure(`Invalid login type: ${login_type}`)
-			return
+				break
+			}
+			default:
+				this._sendLoginFailure(`Invalid login type: ${login_type}`)
+				return
 		}
 
 		await this.page.evaluate(
@@ -280,12 +280,12 @@ export default class MessagesPuppeteer {
 		}
 
 		const result = await Promise.race([
-			() => this.page.waitForSelector("#mainApp:not(.MdNonDisp)", {timeout: 2000})
+			() => this.page.waitForSelector("#mainApp:not(.MdNonDisp)", { timeout: 2000 })
 				.then(value => {
 					loginSuccess = true
 					return value
 				}),
-			() => this.page.waitForSelector("#login_incorrect", {visible: true, timeout: 2000})
+			() => this.page.waitForSelector("#login_incorrect", { visible: true, timeout: 2000 })
 				.then(value => this.page.evaluate(element => element?.innerText, value)),
 			() => this._waitForLoginCancel(),
 		].map(promiseFn => cancelableResolve(promiseFn)))
@@ -318,9 +318,9 @@ export default class MessagesPuppeteer {
 					const text = messageSyncElement.innerText
 					return text.startsWith("Syncing messages...")
 						&& (text.endsWith("100%") || text.endsWith("NaN%"))
-						// TODO Sometimes it gets stuck at 99%...??
+					// TODO Sometimes it gets stuck at 99%...??
 				},
-				{timeout: 10000}, // Assume 10 seconds is long enough
+				{ timeout: 10000 }, // Assume 10 seconds is long enough
 				messageSyncElement)
 		} catch (err) {
 			//this._sendLoginFailure(`Failed to sync: ${err}`)
@@ -582,7 +582,7 @@ export default class MessagesPuppeteer {
 		// - the most recently-sent own message is not fully read
 		let chatIDToSync
 		for (let i = 0, n = chatList.length; i < n; i++) {
-			const chatListItem = chatList[(i+offset) % n]
+			const chatListItem = chatList[(i + offset) % n]
 
 			if (chatListItem.notificationCount > 0) {
 				// Chat has unread notifications, so don't view it
@@ -634,15 +634,15 @@ export default class MessagesPuppeteer {
 		const initialID = this.jiggleTimerID
 
 		exec(`xdotool mousemove --sync --window ${this.windowID} 0 0`, {},
-		(error, stdout, stderr) => {
-			if (error) {
-				this.log(`Error while jiggling mouse: ${error}`)
-			}
+			(error, stdout, stderr) => {
+				if (error) {
+					this.log(`Error while jiggling mouse: ${error}`)
+				}
 
-			if (this.jiggleTimerID == initialID) {
-				this._jiggleTimerStart()
-			}
-		})
+				if (this.jiggleTimerID == initialID) {
+					this._jiggleTimerStart()
+				}
+			})
 	}
 
 	async startObserving() {
@@ -693,8 +693,8 @@ export default class MessagesPuppeteer {
 		await this._interactWithPage(async () => {
 			this.log("Opening settings view")
 			await this.page.click("button.mdGHD01SettingBtn")
-			await this.page.waitForSelector("#context_menu li#settings", {visible: true}).then(e => e.click())
-			await this.page.waitForSelector("#settings_contents", {visible: true})
+			await this.page.waitForSelector("#context_menu li#settings", { visible: true }).then(e => e.click())
+			await this.page.waitForSelector("#settings_contents", { visible: true })
 
 			this.log("Getting own profile info")
 			ownProfile = {
@@ -712,7 +712,7 @@ export default class MessagesPuppeteer {
 
 			const backSelector = "#label_setting button"
 			await this.page.click(backSelector)
-			await this.page.waitForSelector(backSelector, {visible: false})
+			await this.page.waitForSelector(backSelector, { visible: false })
 		})
 		return ownProfile
 	}
@@ -729,11 +729,14 @@ export default class MessagesPuppeteer {
 		return `#joined_group_list_body > li[data-chatid="${id}"]`
 	}
 
+	_contactCountSelector() {
+		return `#contact_wrap_friends .MdLFT04Head._contactlist_header span[id=contact_friend_count]`
+	}
+
 	async _getWholeContactResults(page, distance) {
 		await page.bringToFront()
 		await page.waitForSelector("#contact_wrap_friends > ul.MdCMN03List")
-		const results = []
-		const contactTotalCount =0
+		const contactTotalCount = 0
 		this.log(` distance  is  ${distance}`)
 		let incred = 0
 		const element = await page.$(this._contactCountSelector())
@@ -742,6 +745,7 @@ export default class MessagesPuppeteer {
 				return Number.parseInt(element?.innerText) || 0
 			})
 		this.log(` contact_friend_count  is  ${foundContactCount}`)
+		//infiniting contact  list scrolling
 		while (incred <= distance) {
 			if (foundContactCount <= contactTotalCount) {
 				return
@@ -757,7 +761,7 @@ export default class MessagesPuppeteer {
 		const $lis = await page.$$("#contact_wrap_friends > ul.MdCMN03List >li")
 		//lookup lazy loading count
 		const lis = $lis.slice(contactTotalCount, Math.Infinity)
-		contactTotalCount=$lis.length	
+		contactTotalCount = $lis.length
 	}
 
 	async _switchChat(chatID, forceView = false) {
@@ -822,7 +826,7 @@ export default class MessagesPuppeteer {
 						const leg = parseInt(ulstyleheight, 10)
 						this.log(`found contact_wrap_friends height is ${leg}px`)
 						this.log(`starting to scroll to buttom`)
-						const results = await this._getWholeContactResults(this.page, leg)
+						await this._getWholeContactResults(this.page, leg)
 
 						this.log(`finished to scroll to buttom`)
 					}
@@ -842,8 +846,8 @@ export default class MessagesPuppeteer {
 				// HTML of friend/group item titles ever diverge
 				chatName = await chatItem.evaluate(
 					chatID.charAt(0) == "u"
-					? element => window.__mautrixController.getFriendsListItemName(element)
-					: element => window.__mautrixController.getGroupListItemName(element))
+						? element => window.__mautrixController.getFriendsListItemName(element)
+						: element => window.__mautrixController.getGroupListItemName(element))
 			}
 
 			await this._retryUntilSuccess(3, "Clicking chat item didn't work...try again",
@@ -859,7 +863,7 @@ export default class MessagesPuppeteer {
 					this.log(`Waiting for chat header title to be "${chatName}"`)
 					await this.page.waitForFunction(
 						isCorrectChatVisible,
-						{polling: "mutation", timeout: 1000},
+						{ polling: "mutation", timeout: 1000 },
 						chatName)
 				})
 			if (switchedTabs) {
@@ -879,13 +883,13 @@ export default class MessagesPuppeteer {
 						this.log("Clicking chat header to show detail area")
 						await this.page.click("#_chat_header_area > .mdRGT04Link")
 						this.log("Waiting for detail area")
-						await this.page.waitForSelector("#_chat_detail_area > .mdRGT02Info", {timeout: 1000})
+						await this.page.waitForSelector("#_chat_detail_area > .mdRGT02Info", { timeout: 1000 })
 					})
 			})
 
 			this.log("Waiting for any item to appear in chat")
 			try {
-				await this.page.waitForSelector("#_chat_room_msg_list div", {timeout: 2000})
+				await this.page.waitForSelector("#_chat_room_msg_list div", { timeout: 2000 })
 
 				this.log("Waiting for chat to stabilize")
 				await this.page.evaluate(() => window.__mautrixController.waitForMessageListStability())
@@ -906,17 +910,17 @@ export default class MessagesPuppeteer {
 
 	async _getChatInfoUnsafe(chatID, forceView) {
 		// TODO Commonize this
-		let [isDirect, isGroup, isRoom] = [false,false,false]
+		let [isDirect, isGroup, isRoom] = [false, false, false]
 		switch (chatID.charAt(0)) {
-		case "u":
-			isDirect = true
-			break
-		case "c":
-			isGroup = true
-			break
-		case "r":
-			isRoom = true
-			break
+			case "u":
+				isDirect = true
+				break
+			case "c":
+				isGroup = true
+				break
+			case "r":
+				isRoom = true
+				break
 		}
 
 		const chatListItem = await this.page.$(this._chatItemSelector(chatID))
@@ -978,7 +982,7 @@ export default class MessagesPuppeteer {
 		for (const participant of participants) {
 			this.log(JSON.stringify(participant))
 		}
-		return {participants, ...chatListInfo}
+		return { participants, ...chatListInfo }
 	}
 
 	// TODO Catch "An error has occurred" dialog
@@ -1005,7 +1009,7 @@ export default class MessagesPuppeteer {
 					await input.press("Enter")
 					await this.page.waitForFunction(
 						e => e.innerText == "",
-						{timeout: 500},
+						{ timeout: 500 },
 						input)
 				})
 		})
@@ -1097,14 +1101,14 @@ export default class MessagesPuppeteer {
 		// Sync receipts seen from newly-synced messages
 		// TODO When user leaves, clear the read-by count for the old number of other participants
 		let minCountToFind = 1
-		for (let i = messages.length-1; i >= 0; i--) {
+		for (let i = messages.length - 1; i >= 0; i--) {
 			const message = messages[i]
 			if (!message.is_outgoing) {
 				continue
 			}
 			const count = message.receipt_count
 			if (count >= minCountToFind && message.id > (receiptMap.get(count) || 0)) {
-				minCountToFind = count+1
+				minCountToFind = count + 1
 				receiptMap.set(count, message.id)
 			}
 			// TODO Early exit when count == num other participants
@@ -1204,12 +1208,12 @@ export default class MessagesPuppeteer {
 			// If >1, a notification was missed. Only way to get them is to view the chat.
 			// If == 0, might be own message...or just a shuffled chat, or something else.
 			// To play it safe, just sync them. Should be no harm, as they're viewed already.
-			   diffNumNotifications != 1
+			diffNumNotifications != 1
 			// Without placeholders, some messages require visiting their chat to be synced.
 			|| !this.sendPlaceholders
 			&& (
 				// Can only use previews for DMs, because sender can't be found otherwise!
-				   chatListInfo.id.charAt(0) != 'u'
+				chatListInfo.id.charAt(0) != 'u'
 				// Sync when lastMsg is a canned message for a non-previewable message type.
 				|| chatListInfo.lastMsg.endsWith(" sent a photo.")
 				|| chatListInfo.lastMsg.endsWith(" sent a sticker.")
@@ -1236,7 +1240,7 @@ export default class MessagesPuppeteer {
 	}
 
 	async _syncChat(chatID) {
-		const {messages, receipts} = await this._getMessagesUnsafe(chatID)
+		const { messages, receipts } = await this._getMessagesUnsafe(chatID)
 
 		if (messages.length == 0) {
 			this.log("No new messages found in", chatID)
@@ -1273,7 +1277,7 @@ export default class MessagesPuppeteer {
 
 		this.log(`Received read receipt ${receipt_id} (since ${prevReceiptID}) for chat ${chat_id}`)
 		if (this.client) {
-			this.client.sendReceipt({chat_id: chat_id, id: receipt_id})
+			this.client.sendReceipt({ chat_id: chat_id, id: receipt_id })
 				.catch(err => this.error("Error handling read receipt:", err))
 		} else {
 			this.log("No client connected, not sending receipts")
@@ -1306,7 +1310,7 @@ export default class MessagesPuppeteer {
 				receipt.chat_id = chat_id
 				try {
 					await this.client.sendReceipt(receipt)
-				} catch(err) {
+				} catch (err) {
 					this.error("Error handling read receipt:", err)
 				}
 			}
