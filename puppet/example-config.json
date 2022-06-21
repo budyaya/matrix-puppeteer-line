@@ -10,5 +10,6 @@
 	"cycle_delay": 5000,
 	"use_xdotool": false,
 	"jiggle_delay": 20000,
-	"devtools": false
+	"devtools": false,
+	"timeZone": "Asia/Taipei"
 }
