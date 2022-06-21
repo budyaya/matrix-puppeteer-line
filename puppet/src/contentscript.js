@@ -22,6 +22,7 @@
  * @return {Promise<Date>}
  */
 window.__chronoParseDate = function (text, ref, option) {}
+window._tryParseDateByTimeZone = function (text, ref, option) { }
 /**
  * @param {...string} text - The objects to log.
  * @return {Promise<void>}
@@ -143,7 +144,7 @@ class MautrixController {
 	 * @private
 	 */
 	async _tryParseDate(text, ref, option) {
-		const parsed = await window.__chronoParseDate(text, ref, option)
+		const parsed = await window.__tryParseDateByTimeZone(text, ref, option)
 		return parsed ? new Date(parsed) : null
 	}
 

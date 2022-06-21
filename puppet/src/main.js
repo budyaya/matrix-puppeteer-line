@@ -42,7 +42,7 @@ MessagesPuppeteer.extensionDir = config.extension_dir || MessagesPuppeteer.exten
 MessagesPuppeteer.cycleDelay = config.cycle_delay || MessagesPuppeteer.cycleDelay
 MessagesPuppeteer.useXdotool = config.use_xdotool || MessagesPuppeteer.useXdotool
 MessagesPuppeteer.jiggleDelay = config.jiggle_delay || MessagesPuppeteer.jiggleDelay
-
+MessagesPuppeteer.timeZone = config.timeZone || MessagesPuppeteer.timeZone
 const api = new PuppetAPI(config.listen)
 
 function stop() {

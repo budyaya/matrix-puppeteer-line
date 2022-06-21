@@ -22,6 +22,9 @@ import chrono from "chrono-node"
 
 import TaskQueue from "./taskqueue.js"
 import { sleep } from "./util.js"
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
 
 export default class MessagesPuppeteer {
 	static profileDir = "./profiles"
@@ -34,7 +37,7 @@ export default class MessagesPuppeteer {
 	static viewport = { width: 960, height: 840 }
 	static url = undefined
 	static extensionDir = "extension_files"
-
+	static timeZone = "Asia/Taipei"
 	/**
 	 *
 	 * @param {string} id
@@ -142,12 +145,34 @@ export default class MessagesPuppeteer {
 		await this.page.exposeFunction("__mautrixLoggedOut",
 			this._onLoggedOut.bind(this))
 		await this.page.exposeFunction("__chronoParseDate", chrono.parseDate)
-
+		await this.page.exposeFunction("__tryParseDateByTimeZone", this._tryParseDateByTimeZone.bind(this))
 		// NOTE Must *always* re-login on a browser session, so no need to check if already logged in
 		this.loginRunning = false
 		this.loginCancelled = false
 		this.taskQueue.start()
 		this.log("Startup complete")
+	}
+
+	async _tryParseDateByTimeZone(text, ref, option) {
+		const localTz = MessagesPuppeteer.timeZone // This is the ISO string
+		dayjs.extend(utc);
+		dayjs.extend(timezone);
+		const localTime = dayjs.tz(new Date(), localTz)
+		const localOffset = localTime.utcOffset() // returns in minutes
+	
+		const custom = chrono.casual.clone()
+		custom.refiners.push({
+		  refine: (results) => {
+			Array.from(results).forEach((result) => {
+			  // Returns the time with the offset in included (must use minutes)
+			  result.start.imply('timezoneOffset', localOffset)
+			  result.end && result.end.imply('timezoneOffset', localOffset)
+			})
+			return results
+		  }})
+		const parsed = custom.parseDate(text, ref, option)
+		this.log(`parsed ${parsed}`)
+		return parsed
 	}
 
 	async _preparePage(navigateTo) {
